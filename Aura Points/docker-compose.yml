@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: aurapoints
+      POSTGRES_PASSWORD: aurapoints
+      POSTGRES_DB: aurapoints
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aurapoints"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://aurapoints:aurapoints@postgres:5432/aurapoints
+      JWT_SECRET: your-secret-key-change-in-production
+      JWT_ALGORITHM: HS256
+      WEB3_PROVIDER_URL: http://host.docker.internal:8545
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  ml:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://aurapoints:aurapoints@postgres:5432/aurapoints
+      MODEL_PATH: /app/models/momentum_model.pkl
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./ml:/app
+      - ml_models:/app/models
+    command: python -m ml_service.main
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_CHAIN_ID: 31337
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+
+volumes:
+  postgres_data:
+  ml_models:
+
